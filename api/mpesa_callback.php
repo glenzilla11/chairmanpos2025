@@ -6,11 +6,14 @@
  * This endpoint receives callbacks from M-Pesa when payments are made
  * Handler for both: STK Push & Query responses
  * 
- * URL: http://13.57.193.106/chairpos/api/mpesa_callback.php
+ * URL: http://13.57.193.106/api/mpesa_callback.php
  * ================================================================
  */
 
 require_once dirname(__DIR__) . '/config.php';
+
+// Allow callback from M-Pesa without authentication
+header('Content-Type: application/json');
 
 // Log all incoming requests
 $input = file_get_contents("php://input");
@@ -20,14 +23,17 @@ error_log("M-Pesa Callback Received: " . $input);
 $data = json_decode($input, true);
 
 if (!$data) {
-    http_response_code(400);
-    jsonResponse(['success' => false, 'message' => 'Invalid JSON payload']);
+    http_response_code(200); // Always return 200 to M-Pesa
+    echo json_encode(['success' => false, 'message' => 'Invalid JSON payload']);
+    exit;
 }
 
 // Verify it's a valid callback (basic security)
 if (empty($data['Body'])) {
-    http_response_code(400);
-    jsonResponse(['success' => false, 'message' => 'Invalid callback structure']);
+    http_response_code(200);
+    echo json_encode(['success' => false, 'message' => 'Invalid callback structure']);
+    exit;
+}
 }
 
 // Extract the actual result
@@ -82,8 +88,10 @@ switch ($resultCode) {
         updateTransactionStatus($checkoutRequestID, 'failed', $resultDesc);
 }
 
-// Return success response to M-Pesa
-jsonResponse(['success' => true, 'message' => 'Callback received']);
+// Return success response to M-Pesa (must always return 200 OK)
+http_response_code(200);
+echo json_encode(['success' => true, 'message' => 'Callback received']);
+exit;
 
 // ================================================================
 // HELPER FUNCTIONS
@@ -100,7 +108,6 @@ function handlePaymentSuccess($body) {
     $callbackMetadata = $body['CallbackMetadata']['Item'] ?? [];
     $mpesaReceiptNumber = '';
     $transactionDate = '';
-    $transactionId = '';
     $phoneNumber = '';
     $amount = '';
     
@@ -128,39 +135,19 @@ function handlePaymentSuccess($body) {
     error_log("M-Pesa Payment Success - Receipt: {$mpesaReceiptNumber}, Amount: {$amount}, Phone: {$phoneNumber}");
     
     try {
-        // Update transaction status in database
+        // Update the mpesa_transactions table with payment confirmation
         $stmt = db()->prepare("
-            UPDATE sales 
-            SET payment_method = 'mpesa', 
+            UPDATE mpesa_transactions 
+            SET status = ?, 
                 mpesa_receipt = ?,
-                mpesa_phone = ?,
-                payment_status = 'completed',
-                updated_at = NOW()
-            WHERE mpesa_request_id = ? OR id = (
-                SELECT sale_id FROM mpesa_payments WHERE checkout_request_id = ?
-            )
+                transaction_date = NOW(),
+                result_code = '0',
+                result_desc = 'Success'
+            WHERE checkout_request_id = ?
         ");
-        $stmt->execute([$mpesaReceiptNumber, $phoneNumber, $merchantRequestID, $checkoutRequestID]);
+        $stmt->execute(['completed', $mpesaReceiptNumber, $checkoutRequestID]);
         
-        // Insert payment record
-        $stmt = db()->prepare("
-            INSERT INTO mpesa_payments 
-            (checkout_request_id, merchant_request_id, mpesa_receipt, phone, amount, status, created_at)
-            VALUES (?, ?, ?, ?, ?, ?, NOW())
-            ON DUPLICATE KEY UPDATE 
-            status = 'completed', mpesa_receipt = ?, updated_at = NOW()
-        ");
-        $stmt->execute([
-            $checkoutRequestID,
-            $merchantRequestID,
-            $mpesaReceiptNumber,
-            $phoneNumber,
-            $amount,
-            'completed',
-            $mpesaReceiptNumber
-        ]);
-        
-        error_log("M-Pesa Payment recorded successfully");
+        error_log("M-Pesa Transaction confirmed: {$checkoutRequestID} - Receipt: {$mpesaReceiptNumber}");
         
     } catch (Exception $e) {
         error_log("Error processing M-Pesa callback: " . $e->getMessage());
