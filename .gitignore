@@ -1,12 +1,7 @@
 # Configuration & Sensitive Data
-config.php
 .env
 .env.local
 .env.*.local
-
-# Database
-*.sql
-database.sql
 
 # IDE & Editor
 .vscode/
