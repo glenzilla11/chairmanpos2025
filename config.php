@@ -76,7 +76,7 @@ if (MPESA_ENV === 'sandbox') {
 // Callback URL - Update this to your actual domain
 // For VPS: http://13.57.193.106/chairpos/api/mpesa_callback.php
 // For production: https://yourdomain.com/chairpos/api/mpesa_callback.php
-define('MPESA_CALLBACK_URL', 'http://13.57.193.106/chairpos/api/mpesa_callback.php');
+define('MPESA_CALLBACK_URL', 'http://13.57.193.106/chairmanpos2025/api/mpesa_callback.php');
 
 // ================================================================
 // RATE LIMITING CONFIGURATION
